@@ -417,9 +417,6 @@
 
 
 
-
-
-
 "use client"
 
 import { useParams } from "next/navigation"
@@ -439,10 +436,11 @@ const COLOR_PALETTE = [
 ]
 
 const AI_MODELS = [
-    { id: "v8", name: "YOLO v8", badge: "⚡ Quick", desc: "Nano model. Instant results." },
-    { id: "v9", name: "YOLO v9", badge: "⚖️ Balanced", desc: "Compact. Good accuracy." },
-    { id: "v11", name: "YOLO v11", badge: "💎 Precise", desc: "X-Large. Heavy GPU usage." },
-    { id: "custom", name: "Custom", badge: "📂 Local", desc: "Uses weights/best.pt" },
+    { id: "yolo11n.pt", name: "YOLO 11n", badge: "⚡ Quick", desc: "Nano. CPU Friendly." },
+    { id: "yolo11s.pt", name: "YOLO 11s", badge: "⚖️ Balanced", desc: "Small. Good accuracy." },
+    { id: "yolo11m.pt", name: "YOLO 11m", badge: "💪 Strong", desc: "Medium. Requires GPU." },
+    { id: "yolo11x.pt", name: "YOLO 11x", badge: "💎 Precise", desc: "X-Large. High VRAM." },
+    { id: "custom", name: "Custom", badge: "📂 Local", desc: "Uses uploaded weights" },
 ]
 
 export default function AnnotationStudio() {
@@ -459,8 +457,11 @@ export default function AnnotationStudio() {
   
   // AI State
   const [isAutoAnnotating, setIsAutoAnnotating] = useState(false)
-  const [selectedModel, setSelectedModel] = useState("v8") 
+  const [selectedModel, setSelectedModel] = useState("yolo11n.pt") // Default to safe model
   const [showModelMenu, setShowModelMenu] = useState(false)
+  
+  // --- CHANGE 1: Hardware Warning State ---
+  const [hwWarning, setHwWarning] = useState<string | null>(null)
   
   // Model Upload State
   const [isUploadingModel, setIsUploadingModel] = useState(false)
@@ -490,6 +491,7 @@ export default function AnnotationStudio() {
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const API_URL = "http://localhost:5000/api"
+  const BACKEND_URL = "http://localhost:5000" // Direct backend URL for load-model
 
   // --- 1. DATA LOADING ---
   useEffect(() => {
@@ -568,10 +570,39 @@ export default function AnnotationStudio() {
   }, [boxes, index, imageLoaded, mousePos, selectedTool, classes]) 
 
   // --- 3. LOGIC ---
+
+  // --- CHANGE 2: Model Selection & Hardware Check ---
+  const handleSelectModel = async (modelId: string) => {
+    setSelectedModel(modelId)
+    setShowModelMenu(false)
+    setHwWarning(null) // Reset warnings
+
+    if (modelId === 'custom') return;
+
+    try {
+        // We call the backend load-model route which now returns hardware warnings
+        const res = await axios.post(`${BACKEND_URL}/load-model`, {
+            model_name: modelId
+        })
+        
+        if (res.data.warning) {
+            setHwWarning(res.data.warning)
+        }
+    } catch (err) {
+        console.error("Model check failed", err)
+    }
+  }
+
   const handleAutoAnnotate = async () => {
     if (images.length === 0) return
     setIsAutoAnnotating(true)
     setShowModelMenu(false)
+    
+    // Ensure we trigger the load/check if it hasn't happened yet
+    if (!hwWarning) {
+        // Optional: you could re-run the check here
+    }
+
     try {
         const res = await axios.post(`${API_URL}/annotations/auto`, {
             dataset_id: datasetId,
@@ -591,7 +622,6 @@ export default function AnnotationStudio() {
     }
   }
 
-  // Handle Custom Model Upload
   const handleModelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
       if (!e.target.files || e.target.files.length === 0) return
       
@@ -603,7 +633,7 @@ export default function AnnotationStudio() {
       try {
           await axios.post(`${API_URL}/annotations/upload-model`, formData)
           alert("✅ Custom weights uploaded! Select 'Custom' to use them.")
-          setSelectedModel("custom") // Auto-select Custom
+          setSelectedModel("custom") 
           setShowModelMenu(false)
       } catch (err: any) {
           alert(`Upload Failed: ${err.response?.data?.error || err.message}`)
@@ -625,12 +655,6 @@ export default function AnnotationStudio() {
     setSaving(true)
     
     try {
-      console.log("Saving...", {
-          dataset_id: Number(datasetId),
-          image_id: Number(images[index].id),
-          boxes_count: boxes.length
-      })
-
       await axios.post(`${API_URL}/annotations/save`, {
         dataset_id: Number(datasetId),
         image_id: Number(images[index].id),
@@ -647,7 +671,6 @@ export default function AnnotationStudio() {
       setSaving(false)
       const serverMessage = err.response?.data?.error || err.message
       alert(`Save Failed: ${serverMessage}`)
-      console.error("FULL ERROR:", err)
     }
   }, [boxes, datasetId, images, index])
 
@@ -706,7 +729,6 @@ export default function AnnotationStudio() {
   return (
     <div className="h-screen w-screen bg-zinc-950 text-zinc-200 flex flex-col overflow-hidden font-sans selection:bg-teal-500/30">
       
-      {/* Hidden Input for Model Upload */}
       <input 
         type="file" 
         ref={fileInputRef} 
@@ -718,7 +740,6 @@ export default function AnnotationStudio() {
       {/* HEADER */}
       <header className="h-16 border-b border-zinc-800 bg-zinc-900/50 backdrop-blur flex items-center justify-between px-6 shrink-0 z-20">
         <div className="flex items-center gap-4">
-          {/* ✅ UPDATED LOGO HERE */}
           <img 
             src="/logo.png" 
             alt="AnnoTron" 
@@ -741,15 +762,27 @@ export default function AnnotationStudio() {
                 <div className="text-sm font-mono text-zinc-400"><span className="text-white font-bold">{index + 1}</span> <span className="mx-1">/</span> {images.length}</div>
                 <div className={`w-5 h-5 rounded-full flex items-center justify-center transition-all ${isAnnotated ? 'bg-teal-500 text-black shadow-lg shadow-teal-500/50' : 'bg-zinc-800 text-zinc-600'}`}><i className="fa fa-check text-[10px]"></i></div>
             </div>
-            <Link href={`/projects/${projectId}`} className="w-10 h-10 rounded-full bg-zinc-800 hover:bg-red-500 hover:text-white border border-zinc-700 hover:border-red-500 grid place-items-center transition-all duration-300 group">
-                <i className="fa fa-xmark text-zinc-400 group-hover:text-white text-lg transition-transform duration-300 group-hover:rotate-180"></i>
+            
+            {/* --- CHANGE 3: Fixed 'Wobbling' X Button --- */}
+            {/* Using flex center + origin-center to fix off-axis rotation */}
+            <Link href={`/projects/${projectId}`} className="w-10 h-10 rounded-full bg-zinc-800 hover:bg-red-500 hover:text-white border border-zinc-700 hover:border-red-500 flex items-center justify-center transition-all duration-300 group">
+                <i className="fa fa-xmark text-zinc-400 group-hover:text-white text-lg transition-transform duration-300 group-hover:rotate-90 origin-center"></i>
             </Link>
         </div>
       </header>
 
       {/* MAIN WORKSPACE */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden relative">
         
+        {/* --- CHANGE 4: Hardware Warning Banner --- */}
+        {hwWarning && (
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[100] bg-amber-500/10 backdrop-blur-md border border-amber-500/50 text-amber-200 px-4 py-2 rounded-full shadow-2xl flex items-center gap-3 animate-in slide-in-from-top-4 fade-in">
+                <i className="fa fa-triangle-exclamation text-amber-500"></i>
+                <span className="text-xs font-medium">{hwWarning}</span>
+                <button onClick={() => setHwWarning(null)} className="hover:text-white transition"><i className="fa fa-times"></i></button>
+            </div>
+        )}
+
         {/* LEFT TOOLBAR */}
         <aside className="w-16 border-r border-zinc-800 bg-zinc-900/30 flex flex-col items-center py-6 gap-4 shrink-0 z-10 relative">
             <ToolBtn icon="mouse-pointer" active={selectedTool === "select"} onClick={() => setSelectedTool("select")} title="Select (V)" />
@@ -774,7 +807,6 @@ export default function AnnotationStudio() {
                     <div className="absolute left-14 top-0 w-64 bg-zinc-950 border border-zinc-800 rounded-xl shadow-2xl p-2 z-50 animate-in fade-in slide-in-from-left-2">
                         <div className="text-[10px] font-bold text-zinc-500 uppercase px-2 mb-2 flex justify-between items-center">
                             <span>Select AI Engine</span>
-                            {/* Upload Button in Menu */}
                             <button 
                                 onClick={() => fileInputRef.current?.click()}
                                 disabled={isUploadingModel}
@@ -787,7 +819,7 @@ export default function AnnotationStudio() {
                         {AI_MODELS.map((m) => (
                             <button
                                 key={m.id}
-                                onClick={() => { setSelectedModel(m.id); setShowModelMenu(false) }}
+                                onClick={() => handleSelectModel(m.id)}
                                 className={`w-full text-left p-3 rounded-lg mb-1 flex items-start gap-3 transition-all ${selectedModel === m.id ? 'bg-purple-500/20 border border-purple-500/50' : 'hover:bg-zinc-900 border border-transparent'}`}
                             >
                                 <div className={`w-3 h-3 rounded-full mt-1 ${selectedModel === m.id ? 'bg-purple-500' : 'bg-zinc-800'}`}></div>

@@ -91,7 +91,7 @@ export default function Home() {
                 <button 
                     onClick={createProject}
                     disabled={loading || !name}
-                    className="bg-cyan-600 hover:bg-cyan-500 text-white font-bold px-8 py-3 rounded-xl transition disabled:opacity-50 flex items-center gap-2"
+                    className="bg-blue-600 hover:bg-blue-500 text-white font-bold px-8 py-3 rounded-xl transition disabled:opacity-50 flex items-center gap-2"
                 >
                     {loading ? <i className="fa fa-spinner fa-spin"></i> : <i className="fa fa-plus"></i>}
                     <span>Create</span>
