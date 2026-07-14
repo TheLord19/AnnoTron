@@ -1,0 +1,9 @@
+flask
+flask-sqlalchemy
+flask-cors
+python-dotenv
+ultralytics
+torch
+torchvision
+opencv-python
+werkzeug
